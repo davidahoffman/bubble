@@ -124,8 +124,9 @@ struct EditorView: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
-            guard !isSwapping, let textView = notification.object as? NSTextView else { return }
-            document.content = textView.string
+            guard !isSwapping, let textView = textView, !textView.isTypewriting else { return }
+            guard let tv = notification.object as? NSTextView else { return }
+            document.content = tv.string
             document.isDirty = true
             store.scheduleAutoSave()
         }
@@ -157,6 +158,7 @@ class BubbleTextView: NSTextView {
     var typewriterTimer: Timer?
     private var typewriterContent: [Character] = []
     private var typewriterIndex = 0
+    var isTypewriting = false
 
     // MARK: - Typewriter Mode
 
@@ -167,6 +169,7 @@ class BubbleTextView: NSTextView {
 
         typewriterContent = Array(content)
         typewriterIndex = 0
+        isTypewriting = true
         typewriterTimer?.invalidate()
 
         let fullRange = NSRange(location: 0, length: storage.length)
@@ -182,6 +185,7 @@ class BubbleTextView: NSTextView {
         guard typewriterIndex < typewriterContent.count, let storage = textStorage else {
             typewriterTimer?.invalidate()
             typewriterTimer = nil
+            isTypewriting = false
             return
         }
 
@@ -219,6 +223,19 @@ class BubbleTextView: NSTextView {
     func stopTypewriter() {
         typewriterTimer?.invalidate()
         typewriterTimer = nil
+        // Restore full original content
+        if !typewriterContent.isEmpty, let storage = textStorage {
+            let original = String(typewriterContent)
+            let fullRange = NSRange(location: 0, length: storage.length)
+            if shouldChangeText(in: fullRange, replacementString: original) {
+                storage.replaceCharacters(in: fullRange, with: original)
+                didChangeText()
+                setSelectedRange(NSRange(location: 0, length: 0))
+                scrollToBeginningOfDocument(nil)
+            }
+            typewriterContent = []
+        }
+        isTypewriting = false
     }
 
     // MARK: - Key Equivalents
