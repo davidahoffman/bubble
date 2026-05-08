@@ -140,6 +140,72 @@ struct EditorView: NSViewRepresentable {
 class BubbleTextView: NSTextView {
 
     private var listSwitcher: ListSwitcherPanel?
+    private var typewriterTimer: Timer?
+    private var typewriterContent: [Character] = []
+    private var typewriterIndex = 0
+
+    // MARK: - Typewriter Mode
+
+    func startTypewriter() {
+        guard let storage = textStorage else { return }
+        let content = storage.string
+        guard !content.isEmpty else { return }
+
+        typewriterContent = Array(content)
+        typewriterIndex = 0
+        typewriterTimer?.invalidate()
+
+        let fullRange = NSRange(location: 0, length: storage.length)
+        if shouldChangeText(in: fullRange, replacementString: "") {
+            storage.replaceCharacters(in: fullRange, with: "")
+            didChangeText()
+        }
+
+        typeNextChar()
+    }
+
+    private func typeNextChar() {
+        guard typewriterIndex < typewriterContent.count, let storage = textStorage else {
+            typewriterTimer?.invalidate()
+            typewriterTimer = nil
+            return
+        }
+
+        let char = typewriterContent[typewriterIndex]
+        let insertRange = NSRange(location: storage.length, length: 0)
+        if shouldChangeText(in: insertRange, replacementString: String(char)) {
+            storage.replaceCharacters(in: insertRange, with: String(char))
+            didChangeText()
+            setSelectedRange(NSRange(location: storage.length, length: 0))
+            scrollRangeToVisible(NSRange(location: storage.length, length: 0))
+        }
+
+        typewriterIndex += 1
+
+        // 90 WPM ≈ 9 chars/sec base. Vary by context for realism.
+        let delay: TimeInterval
+        let next = typewriterIndex < typewriterContent.count ? typewriterContent[typewriterIndex] : nil
+        if char == "\n" && next == "\n" {
+            delay = 0.6
+        } else if char == "\n" {
+            delay = 0.3
+        } else if char == " " {
+            delay = Double.random(in: 0.08...0.16)
+        } else if char == "#" || char == "|" || char == "-" {
+            delay = Double.random(in: 0.03...0.06)
+        } else {
+            delay = Double.random(in: 0.04...0.09)
+        }
+
+        typewriterTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.typeNextChar()
+        }
+    }
+
+    func stopTypewriter() {
+        typewriterTimer?.invalidate()
+        typewriterTimer = nil
+    }
 
     // MARK: - Key Equivalents
 
@@ -159,6 +225,13 @@ class BubbleTextView: NSTextView {
             return true
         case "k":
             insertMarkdownLink()
+            return true
+        case "t" where event.modifierFlags.contains(.shift):
+            if typewriterTimer != nil {
+                stopTypewriter()
+            } else {
+                startTypewriter()
+            }
             return true
         case "f":
             let item = NSMenuItem()
