@@ -140,14 +140,16 @@ class BubbleTextView: NSTextView {
             insertMarkdownLink()
             return true
         case "f":
-            performFindPanelAction(NSFindPanelAction.showFindPanel.rawValue)
+            let item = NSMenuItem()
+            item.tag = Int(NSFindPanelAction.showFindPanel.rawValue)
+            performFindPanelAction(item)
             return true
         case "g":
-            if event.modifierFlags.contains(.shift) {
-                performFindPanelAction(NSFindPanelAction.previous.rawValue)
-            } else {
-                performFindPanelAction(NSFindPanelAction.next.rawValue)
-            }
+            let item = NSMenuItem()
+            item.tag = event.modifierFlags.contains(.shift)
+                ? Int(NSFindPanelAction.previous.rawValue)
+                : Int(NSFindPanelAction.next.rawValue)
+            performFindPanelAction(item)
             return true
         default:
             return super.performKeyEquivalent(with: event)
