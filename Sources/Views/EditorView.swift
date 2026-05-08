@@ -104,9 +104,23 @@ struct EditorView: NSViewRepresentable {
         var scrollView: NSScrollView?
         var isSwapping = false
 
+        private var typewriterObserver: Any?
+
         init(document: MarkdownDocument, store: DocumentStore) {
             self.document = document
             self.store = store
+            super.init()
+            typewriterObserver = NotificationCenter.default.addObserver(
+                forName: BubbleAction.typewriter.notificationName,
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                guard let tv = self?.textView else { return }
+                if tv.typewriterTimer != nil { tv.stopTypewriter() } else { tv.startTypewriter() }
+            }
+        }
+
+        deinit {
+            if let obs = typewriterObserver { NotificationCenter.default.removeObserver(obs) }
         }
 
         func textDidChange(_ notification: Notification) {
@@ -140,7 +154,7 @@ struct EditorView: NSViewRepresentable {
 class BubbleTextView: NSTextView {
 
     private var listSwitcher: ListSwitcherPanel?
-    private var typewriterTimer: Timer?
+    var typewriterTimer: Timer?
     private var typewriterContent: [Character] = []
     private var typewriterIndex = 0
 
@@ -225,13 +239,6 @@ class BubbleTextView: NSTextView {
             return true
         case "k":
             insertMarkdownLink()
-            return true
-        case "t" where event.modifierFlags.contains(.shift):
-            if typewriterTimer != nil {
-                stopTypewriter()
-            } else {
-                startTypewriter()
-            }
             return true
         case "f":
             let item = NSMenuItem()

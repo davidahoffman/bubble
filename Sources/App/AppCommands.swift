@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum BubbleAction: String {
-    case newDocument, openFile, saveActive, closeTab, toggleSidebar
+    case newDocument, openFile, saveActive, closeTab, toggleSidebar, typewriter
     var notificationName: Notification.Name { .init("Bubble.\(rawValue)") }
     func post() { NotificationCenter.default.post(name: notificationName, object: nil) }
 }
@@ -12,7 +12,9 @@ struct BubbleCommands: Commands {
             Button("New") { BubbleAction.newDocument.post() }
                 .keyboardShortcut("n")
             Button("New Tab") { BubbleAction.newDocument.post() }
-                .keyboardShortcut("t")
+                .keyboardShortcut("t", modifiers: .command)
+            Button("Typewriter Mode") { BubbleAction.typewriter.post() }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
             Button("Open...") { BubbleAction.openFile.post() }
                 .keyboardShortcut("o")
             Divider()
