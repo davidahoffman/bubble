@@ -430,6 +430,30 @@ class BubbleTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let pb = NSPasteboard.general
+
+        // Strip duplicate list prefix when pasting a list item onto an auto-continued line
+        if let text = pb.string(forType: .string),
+           let storage = textStorage {
+            let listPattern = #"^(\s*)([-*+]( \[[ xX]\])?|\d+\.)\s+"#
+            let pastedHasPrefix = text.range(of: listPattern, options: .regularExpression) != nil
+            if pastedHasPrefix {
+                let nsText = storage.string as NSString
+                let cursor = selectedRange().location
+                let lineRange = nsText.lineRange(for: NSRange(location: cursor, length: 0))
+                let lineUpToCursor = nsText.substring(with: NSRange(location: lineRange.location, length: cursor - lineRange.location))
+                let lineIsEmptyPrefix = lineUpToCursor.range(of: #"^\s*([-*+]( \[[ xX]\])?|\d+\.)\s*$"#, options: .regularExpression) != nil
+                if lineIsEmptyPrefix {
+                    let replaceRange = NSRange(location: lineRange.location, length: cursor - lineRange.location)
+                    if shouldChangeText(in: replaceRange, replacementString: "") {
+                        storage.replaceCharacters(in: replaceRange, with: "")
+                        didChangeText()
+                    }
+                    super.paste(sender)
+                    return
+                }
+            }
+        }
+
         if let urlString = pb.string(forType: .URL) ?? pb.string(forType: .string),
            let url = URL(string: urlString),
            url.scheme != nil,
