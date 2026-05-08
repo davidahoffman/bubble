@@ -71,8 +71,28 @@ struct EditorView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        context.coordinator.document = document
-        context.coordinator.store = store
+        let coord = context.coordinator
+        coord.store = store
+
+        if document.id != coord.document.id {
+            coord.document = document
+            if let textView = coord.textView {
+                let newContent = document.content
+                coord.isSwapping = true
+                textView.string = newContent
+                if let storage = textView.textStorage as? MarkdownTextStorage {
+                    storage.beginEditing()
+                    storage.edited(.editedCharacters, range: NSRange(location: 0, length: (newContent as NSString).length), changeInLength: 0)
+                    storage.endEditing()
+                }
+                coord.isSwapping = false
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                textView.scrollToBeginningOfDocument(nil)
+                textView.window?.makeFirstResponder(textView)
+            }
+        } else {
+            coord.document = document
+        }
     }
 
     // MARK: - Coordinator
@@ -82,6 +102,7 @@ struct EditorView: NSViewRepresentable {
         var store: DocumentStore
         var textView: BubbleTextView?
         var scrollView: NSScrollView?
+        var isSwapping = false
 
         init(document: MarkdownDocument, store: DocumentStore) {
             self.document = document
@@ -89,7 +110,7 @@ struct EditorView: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
+            guard !isSwapping, let textView = notification.object as? NSTextView else { return }
             document.content = textView.string
             document.isDirty = true
             store.scheduleAutoSave()

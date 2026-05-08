@@ -15,7 +15,6 @@ struct ContentView: View {
 
                 if let doc = store.activeDocument {
                     EditorView(document: doc, store: store)
-                        .id(doc.id)
                 } else {
                     emptyState
                 }
