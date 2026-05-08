@@ -39,4 +39,4 @@ Most of the time was spent on feel — getting code blocks to have rounded dark 
 
 The AI pair wrote every line of Swift. I told it what I wanted, reviewed what it built, and pushed back when it was wrong. That's the workflow now.
 
-**Try it:** `github.com/shopify-playground/pm-os` → `projects/bubble/`
+**Try it:** `github.com/davidahoffman/bubble`
