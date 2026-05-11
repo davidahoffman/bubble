@@ -106,6 +106,7 @@ class DocumentStore {
         }
         try? document.content.write(to: url, atomically: true, encoding: .utf8)
         document.isDirty = false
+        document.markJustSaved()
     }
 
     func saveAs(_ document: MarkdownDocument) {

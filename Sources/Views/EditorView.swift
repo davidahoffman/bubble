@@ -105,6 +105,7 @@ struct EditorView: NSViewRepresentable {
         var isSwapping = false
 
         private var typewriterObserver: Any?
+        private var reloadObserver: Any?
 
         init(document: MarkdownDocument, store: DocumentStore) {
             self.document = document
@@ -117,10 +118,30 @@ struct EditorView: NSViewRepresentable {
                 guard let tv = self?.textView else { return }
                 if tv.typewriterTimer != nil { tv.stopTypewriter() } else { tv.startTypewriter() }
             }
+            reloadObserver = NotificationCenter.default.addObserver(
+                forName: .documentDidReloadFromDisk,
+                object: nil, queue: .main
+            ) { [weak self] notif in
+                guard let self, let doc = notif.object as? MarkdownDocument,
+                      doc.id == self.document.id,
+                      let textView = self.textView else { return }
+                let cursor = textView.selectedRange()
+                self.isSwapping = true
+                textView.string = doc.content
+                if let storage = textView.textStorage as? MarkdownTextStorage {
+                    storage.beginEditing()
+                    storage.edited(.editedCharacters, range: NSRange(location: 0, length: (doc.content as NSString).length), changeInLength: 0)
+                    storage.endEditing()
+                }
+                self.isSwapping = false
+                let safeCursor = NSRange(location: min(cursor.location, (doc.content as NSString).length), length: 0)
+                textView.setSelectedRange(safeCursor)
+            }
         }
 
         deinit {
             if let obs = typewriterObserver { NotificationCenter.default.removeObserver(obs) }
+            if let obs = reloadObserver { NotificationCenter.default.removeObserver(obs) }
         }
 
         func textDidChange(_ notification: Notification) {
