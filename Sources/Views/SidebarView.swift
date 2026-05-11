@@ -131,13 +131,9 @@ struct SidebarTab: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(isActive ? .primary : .secondary)
-                    .onTapGesture(count: 2, perform: onDoubleClick)
-                    .onTapGesture(count: 1, perform: onSelect)
             }
 
             Spacer()
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onSelect)
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
@@ -150,6 +146,11 @@ struct SidebarTab: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 1) { onSelect() }
+        .gesture(
+            TapGesture(count: 2).onEnded { onDoubleClick() }
+        )
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isActive ? Color.primary.opacity(0.07) : Color.clear)
