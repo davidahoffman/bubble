@@ -434,6 +434,13 @@ class BubbleTextView: NSTextView {
         let text = storage.string as NSString
         let cursorLocation = selectedRange().location
         let lineRange = text.lineRange(for: NSRange(location: cursorLocation, length: 0))
+
+        if cursorLocation == lineRange.location {
+            super.insertNewline(sender)
+            typingAttributes = MarkdownStyles.base
+            return
+        }
+
         let line = text.substring(with: lineRange).trimmingCharacters(in: .newlines)
 
         if let continuation = listContinuation(for: line) {
