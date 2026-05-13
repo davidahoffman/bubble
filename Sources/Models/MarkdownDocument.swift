@@ -16,21 +16,26 @@ class MarkdownDocument: Identifiable {
 
     var displayName: String {
         if let url = fileURL {
-            return Self.strippingLeadingDate(from: url.deletingPathExtension().lastPathComponent)
+            return Self.strippingDefaultNamePrefixes(from: url.deletingPathExtension().lastPathComponent)
         }
         if let custom = customName, !custom.isEmpty {
             return custom
         }
         let firstLine = content.components(separatedBy: .newlines).first ?? ""
         let stripped = firstLine.replacingOccurrences(of: "^#+\\s*", with: "", options: .regularExpression)
-        let withoutDate = Self.strippingLeadingDate(from: stripped)
-        let words = withoutDate.split(separator: " ").prefix(3).joined(separator: " ")
+        let withoutPrefixes = Self.strippingDefaultNamePrefixes(from: stripped)
+        let words = withoutPrefixes.split(separator: " ").prefix(3).joined(separator: " ")
         return words.isEmpty ? "Untitled" : String(words)
     }
 
-    private static func strippingLeadingDate(from name: String) -> String {
-        let stripped = name.replacingOccurrences(
+    private static func strippingDefaultNamePrefixes(from name: String) -> String {
+        var stripped = name.replacingOccurrences(
             of: #"^\s*\d{4}[-_.]\d{1,2}[-_.]\d{1,2}(?:[\s_\-–—:]+|$)"#,
+            with: "",
+            options: .regularExpression
+        )
+        stripped = stripped.replacingOccurrences(
+            of: #"(?i)^\s*david(?:[\s_\-–—:]+|$)"#,
             with: "",
             options: .regularExpression
         ).trimmingCharacters(in: .whitespacesAndNewlines)
