@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -22,7 +23,7 @@ struct ContentView: View {
 
             // Status bar
             if let doc = store.activeDocument {
-                StatusBarView(content: doc.content)
+                StatusBarView(document: doc)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: store.sidebarVisible)
@@ -119,7 +120,22 @@ struct ContentView: View {
 // MARK: - Status Bar
 
 struct StatusBarView: View {
-    let content: String
+    let document: MarkdownDocument
+
+    @State private var copiedPath = false
+    @State private var copiedResetTask: Task<Void, Never>?
+
+    private var content: String {
+        document.content
+    }
+
+    private var filePath: String? {
+        document.fileURL?.path
+    }
+
+    private var statusFont: Font {
+        .system(size: 10, design: .monospaced)
+    }
 
     private var wordCount: Int {
         content.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
@@ -130,14 +146,55 @@ struct StatusBarView: View {
     }
 
     var body: some View {
-        HStack {
-            Spacer()
+        HStack(spacing: 8) {
+            Spacer(minLength: 8)
+
+            if let filePath {
+                Button {
+                    copyFilePath(filePath)
+                } label: {
+                    Text(copiedPath ? "Copied path" : filePath)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .buttonStyle(.plain)
+                .font(statusFont)
+                .foregroundStyle(copiedPath ? .secondary : .tertiary)
+                .frame(maxWidth: 520, alignment: .trailing)
+                .help("Click to copy file path")
+                .contextMenu {
+                    Button("Copy File Path") {
+                        copyFilePath(filePath)
+                    }
+                }
+                .accessibilityLabel("Copy file path")
+                .accessibilityValue(filePath)
+
+                Text("·")
+                    .font(statusFont)
+                    .foregroundStyle(.tertiary)
+            }
+
             Text("\(wordCount) words  ·  \(charCount) chars")
-                .font(.system(size: 10, design: .monospaced))
+                .font(statusFont)
                 .foregroundStyle(.tertiary)
-                .padding(.trailing, 16)
+                .layoutPriority(1)
         }
+        .padding(.horizontal, 16)
         .frame(height: 22)
         .background(.regularMaterial)
+    }
+
+    private func copyFilePath(_ filePath: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(filePath, forType: .string)
+
+        copiedResetTask?.cancel()
+        copiedPath = true
+        copiedResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            copiedPath = false
+        }
     }
 }
