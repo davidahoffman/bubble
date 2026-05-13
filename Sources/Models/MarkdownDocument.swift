@@ -11,6 +11,8 @@ class MarkdownDocument: Identifiable {
     var lastKnownModDate: Date?
 
     private var fileWatcher: DispatchSourceFileSystemObject?
+    private var directoryWatcher: DispatchSourceFileSystemObject?
+    private var pendingReload: DispatchWorkItem?
 
     var displayName: String {
         if let url = fileURL {
@@ -35,7 +37,7 @@ class MarkdownDocument: Identifiable {
     }
 
     deinit {
-        fileWatcher?.cancel()
+        stopWatching()
     }
 
     private func snapshotModDate() {
@@ -44,21 +46,62 @@ class MarkdownDocument: Identifiable {
     }
 
     private func startWatching() {
+        stopWatching()
+        guard let url = fileURL else { return }
+        startDirectoryWatcher(for: url)
+        restartFileWatcher(for: url)
+    }
+
+    private func stopWatching() {
+        pendingReload?.cancel()
+        pendingReload = nil
         fileWatcher?.cancel()
         fileWatcher = nil
-        guard let url = fileURL else { return }
+        directoryWatcher?.cancel()
+        directoryWatcher = nil
+    }
+
+    private func startDirectoryWatcher(for url: URL) {
+        let directoryURL = url.deletingLastPathComponent()
+        let fd = open(directoryURL.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+
+        source.setEventHandler { [weak self] in
+            self?.scheduleReload(restartFileWatcher: true)
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        source.resume()
+        directoryWatcher = source
+    }
+
+    private func restartFileWatcher(for url: URL? = nil) {
+        fileWatcher?.cancel()
+        fileWatcher = nil
+
+        let url = url ?? fileURL
+        guard let url else { return }
 
         let fd = open(url.path, O_EVTONLY)
         guard fd >= 0 else { return }
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
-            eventMask: [.write, .rename],
+            eventMask: [.write, .rename, .delete],
             queue: .main
         )
 
         source.setEventHandler { [weak self] in
-            self?.reloadIfChanged()
+            self?.scheduleReload(restartFileWatcher: true)
         }
 
         source.setCancelHandler {
@@ -69,22 +112,36 @@ class MarkdownDocument: Identifiable {
         fileWatcher = source
     }
 
+    private func scheduleReload(restartFileWatcher: Bool = false) {
+        pendingReload?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.reloadIfChanged()
+            if restartFileWatcher {
+                self.restartFileWatcher()
+            }
+        }
+        pendingReload = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+    }
+
     func reloadIfChanged() {
         guard let url = fileURL else { return }
         let currentMod = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-        if let currentMod, currentMod != lastKnownModDate {
-            guard let newContent = try? String(contentsOf: url, encoding: .utf8) else { return }
-            if newContent != content {
-                content = newContent
-                isDirty = false
-                lastKnownModDate = currentMod
-                NotificationCenter.default.post(name: .documentDidReloadFromDisk, object: self)
-            }
+        guard let currentMod, currentMod != lastKnownModDate else { return }
+        guard let newContent = try? String(contentsOf: url, encoding: .utf8) else { return }
+
+        lastKnownModDate = currentMod
+        if newContent != content {
+            content = newContent
+            isDirty = false
+            NotificationCenter.default.post(name: .documentDidReloadFromDisk, object: self)
         }
     }
 
     func markJustSaved() {
         snapshotModDate()
+        restartFileWatcher()
     }
 }
 

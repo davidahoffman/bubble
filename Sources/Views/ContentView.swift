@@ -154,9 +154,9 @@ struct StatusBarView: View {
         HStack(spacing: 8) {
             Spacer(minLength: 8)
 
-            if let displayPath {
+            if let filePath, let displayPath {
                 Button {
-                    copyFilePath(displayPath)
+                    copyFilePath(filePath)
                 } label: {
                     Text(copiedPath ? "Copied path" : displayPath)
                         .lineLimit(1)
@@ -166,14 +166,14 @@ struct StatusBarView: View {
                 .font(statusFont)
                 .foregroundStyle(copiedPath ? .secondary : .tertiary)
                 .frame(maxWidth: 520, alignment: .trailing)
-                .help("Click to copy file path")
+                .help("Click to copy full file path")
                 .contextMenu {
                     Button("Copy File Path") {
-                        copyFilePath(displayPath)
+                        copyFilePath(filePath)
                     }
                 }
                 .accessibilityLabel("Copy file path")
-                .accessibilityValue(displayPath)
+                .accessibilityValue(filePath)
 
                 Text("·")
                     .font(statusFont)
