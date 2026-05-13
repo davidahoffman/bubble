@@ -221,7 +221,7 @@ class BubbleTextView: NSTextView {
 
         typewriterIndex += 1
 
-        // 90 WPM ≈ 9 chars/sec base. Vary by context for realism.
+        // 180 WPM ≈ 18 chars/sec base. Vary by context for realism.
         let delay: TimeInterval
         let next = typewriterIndex < typewriterContent.count ? typewriterContent[typewriterIndex] : nil
         if char == "\n" && next == "\n" {
@@ -236,7 +236,7 @@ class BubbleTextView: NSTextView {
             delay = Double.random(in: 0.04...0.09)
         }
 
-        typewriterTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        typewriterTimer = Timer.scheduledTimer(withTimeInterval: delay / 2, repeats: false) { [weak self] _ in
             self?.typeNextChar()
         }
     }

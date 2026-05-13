@@ -16,15 +16,25 @@ class MarkdownDocument: Identifiable {
 
     var displayName: String {
         if let url = fileURL {
-            return url.deletingPathExtension().lastPathComponent
+            return Self.strippingLeadingDate(from: url.deletingPathExtension().lastPathComponent)
         }
         if let custom = customName, !custom.isEmpty {
             return custom
         }
         let firstLine = content.components(separatedBy: .newlines).first ?? ""
         let stripped = firstLine.replacingOccurrences(of: "^#+\\s*", with: "", options: .regularExpression)
-        let words = stripped.split(separator: " ").prefix(3).joined(separator: " ")
+        let withoutDate = Self.strippingLeadingDate(from: stripped)
+        let words = withoutDate.split(separator: " ").prefix(3).joined(separator: " ")
         return words.isEmpty ? "Untitled" : String(words)
+    }
+
+    private static func strippingLeadingDate(from name: String) -> String {
+        let stripped = name.replacingOccurrences(
+            of: #"^\s*\d{4}[-_.]\d{1,2}[-_.]\d{1,2}(?:[\s_\-–—:]+|$)"#,
+            with: "",
+            options: .regularExpression
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped.isEmpty ? name : stripped
     }
 
     init(content: String = "", fileURL: URL? = nil) {
