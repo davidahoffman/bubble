@@ -133,6 +133,11 @@ struct StatusBarView: View {
         document.fileURL?.path
     }
 
+    private var displayPath: String? {
+        guard let filePath else { return nil }
+        return (filePath as NSString).abbreviatingWithTildeInPath
+    }
+
     private var statusFont: Font {
         .system(size: 10, design: .monospaced)
     }
@@ -149,11 +154,11 @@ struct StatusBarView: View {
         HStack(spacing: 8) {
             Spacer(minLength: 8)
 
-            if let filePath {
+            if let displayPath {
                 Button {
-                    copyFilePath(filePath)
+                    copyFilePath(displayPath)
                 } label: {
-                    Text(copiedPath ? "Copied path" : filePath)
+                    Text(copiedPath ? "Copied path" : displayPath)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -164,11 +169,11 @@ struct StatusBarView: View {
                 .help("Click to copy file path")
                 .contextMenu {
                     Button("Copy File Path") {
-                        copyFilePath(filePath)
+                        copyFilePath(displayPath)
                     }
                 }
                 .accessibilityLabel("Copy file path")
-                .accessibilityValue(filePath)
+                .accessibilityValue(displayPath)
 
                 Text("·")
                     .font(statusFont)
