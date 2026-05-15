@@ -451,12 +451,12 @@ class BubbleTextView: NSTextView {
                     didChangeText()
                 }
             } else {
-                super.insertNewline(sender)
                 let insertRange = selectedRange()
-                if shouldChangeText(in: insertRange, replacementString: continuation) {
-                    storage.replaceCharacters(in: insertRange, with: continuation)
+                let replacement = "\n\(continuation)"
+                if shouldChangeText(in: insertRange, replacementString: replacement) {
+                    storage.replaceCharacters(in: insertRange, with: replacement)
                     didChangeText()
-                    setSelectedRange(NSRange(location: insertRange.location + (continuation as NSString).length, length: 0))
+                    setSelectedRange(NSRange(location: insertRange.location + (replacement as NSString).length, length: 0))
                 }
             }
         } else {
