@@ -64,7 +64,7 @@ class MarkdownTextStorage: NSTextStorage {
     // MARK: - Formatting Rules
 
     private func applyHeadings(_ text: NSString) {
-        enumeratePattern(#"^(#{1,6})\s+(.+)$"#, in: text, options: .anchorsMatchLines) { match in
+        enumeratePattern(#"^(#{1,6})[ \t]+(.+)$"#, in: text, options: .anchorsMatchLines) { match in
             let hashRange = match.range(at: 1)
             let level = hashRange.length
             let fullRange = match.range(at: 0)
@@ -220,7 +220,7 @@ class MarkdownTextStorage: NSTextStorage {
     }
 
     private func applyBlockquotes(_ text: NSString) {
-        enumeratePattern(#"^(>)\s+(.+)$"#, in: text, options: .anchorsMatchLines) { match in
+        enumeratePattern(#"^(>)[ \t]+(.+)$"#, in: text, options: .anchorsMatchLines) { match in
             let markerRange = match.range(at: 1)
             let contentRange = match.range(at: 2)
             let fullRange = match.range(at: 0)
@@ -237,7 +237,7 @@ class MarkdownTextStorage: NSTextStorage {
     }
 
     private func applyBullets(_ text: NSString) {
-        enumeratePattern(#"^(\s*)([-*+])\s+"#, in: text, options: .anchorsMatchLines) { match in
+        enumeratePattern(#"^([ \t]*)([-*+])[ \t]+"#, in: text, options: .anchorsMatchLines) { match in
             let markerRange = match.range(at: 2)
             let indentRange = match.range(at: 1)
             let indentLevel = indentRange.length / 2 + 1
@@ -255,7 +255,7 @@ class MarkdownTextStorage: NSTextStorage {
     }
 
     private func applyNumberedLists(_ text: NSString) {
-        enumeratePattern(#"^(\s*)(\d+\.)\s+"#, in: text, options: .anchorsMatchLines) { match in
+        enumeratePattern(#"^([ \t]*)(\d+\.)[ \t]+"#, in: text, options: .anchorsMatchLines) { match in
             let numberRange = match.range(at: 2)
             let indentRange = match.range(at: 1)
             let indentLevel = indentRange.length / 2 + 1
@@ -273,7 +273,7 @@ class MarkdownTextStorage: NSTextStorage {
     }
 
     private func applyCheckboxes(_ text: NSString) {
-        enumeratePattern(#"^(\s*[-*+]\s+\[)([ xX])(\].*)$"#, in: text, options: .anchorsMatchLines) { match in
+        enumeratePattern(#"^([ \t]*[-*+][ \t]+\[)([ xX])(\].*)$"#, in: text, options: .anchorsMatchLines) { match in
             let stateRange = match.range(at: 2)
             let state = text.substring(with: stateRange)
             let isChecked = state.lowercased() == "x"
@@ -322,7 +322,7 @@ class MarkdownTextStorage: NSTextStorage {
     }
 
     private func applyHorizontalRules(_ text: NSString) {
-        enumeratePattern(#"^[-*_]{3,}\s*$"#, in: text, options: .anchorsMatchLines) { match in
+        enumeratePattern(#"^[-*_]{3,}[ \t]*$"#, in: text, options: .anchorsMatchLines) { match in
             backing.addAttribute(.foregroundColor, value: MarkdownStyles.mutedColor, range: match.range(at: 0))
         }
     }
