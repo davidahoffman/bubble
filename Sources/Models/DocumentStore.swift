@@ -38,6 +38,14 @@ class DocumentStore {
             self?.saveAllDirty()
             self?.persistSession()
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .documentDidConflictWithDisk,
+            object: nil, queue: .main
+        ) { [weak self] notif in
+            guard let doc = notif.object as? MarkdownDocument else { return }
+            self?.resolveDiskConflict(doc)
+        }
     }
 
     // MARK: - Document Management
@@ -82,10 +90,36 @@ class DocumentStore {
     }
 
     func closeDocument(_ id: UUID) {
-        guard let index = documents.firstIndex(where: { $0.id == id }) else { return }
-        let doc = documents[index]
-        if doc.isDirty { save(doc) }
+        guard let doc = documents.first(where: { $0.id == id }) else { return }
+        guard doc.isDirty else { removeDocument(id); return }
 
+        if doc.fileURL != nil {
+            if save(doc) || confirmDiscard(doc, reason: doc.hasDiskConflict ? "The file changed on disk." : "Bubble couldn't save it.") { removeDocument(id) }
+            return
+        }
+
+        // Untitled with edits: the tab stays until the user saves or explicitly discards.
+        if doc.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { removeDocument(id); return }
+        let alert = NSAlert()
+        alert.messageText = "Save changes to \u{201C}\(doc.displayName)\u{201D}?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save…")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Don't Save")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            saveAs(doc) { [weak self] saved in
+                if saved { self?.removeDocument(id) }
+            }
+        case .alertThirdButtonReturn:
+            removeDocument(id)
+        default:
+            break
+        }
+    }
+
+    private func removeDocument(_ id: UUID) {
+        guard let index = documents.firstIndex(where: { $0.id == id }) else { return }
         documents.remove(at: index)
 
         if activeDocumentID == id {
@@ -99,17 +133,26 @@ class DocumentStore {
 
     // MARK: - Save
 
-    func save(_ document: MarkdownDocument) {
-        guard let url = document.fileURL else {
-            saveAs(document)
-            return
+    /// Returns true only when the edits are on disk. A failure leaves the
+    /// document dirty; `interactive` decides whether the user hears about it.
+    @discardableResult
+    func save(_ document: MarkdownDocument, interactive: Bool = true) -> Bool {
+        guard document.fileURL != nil else {
+            if interactive { saveAs(document) }
+            return false
         }
-        try? document.content.write(to: url, atomically: true, encoding: .utf8)
-        document.isDirty = false
-        document.markJustSaved()
+        do {
+            try document.write()
+            return true
+        } catch {
+            if interactive && !document.hasDiskConflict {
+                showError("Couldn't save \u{201C}\(document.displayName)\u{201D}", error)
+            }
+            return false
+        }
     }
 
-    func saveAs(_ document: MarkdownDocument) {
+    func saveAs(_ document: MarkdownDocument, completion: ((Bool) -> Void)? = nil) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
 
@@ -118,9 +161,16 @@ class DocumentStore {
         panel.nameFieldStringValue = fileName
 
         panel.begin { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
+            guard response == .OK, let url = panel.url, let self else { completion?(false); return }
+            let previousURL = document.fileURL
             document.fileURL = url
-            self?.save(document)
+            // The user just chose this path (and confirmed any overwrite), so
+            // it isn't a conflict with an older disk version.
+            document.hasDiskConflict = false
+            document.lastKnownModDate = nil
+            let saved = self.save(document)
+            if !saved { document.fileURL = previousURL }
+            completion?(saved)
         }
     }
 
@@ -140,8 +190,13 @@ class DocumentStore {
             let fileName = newName.hasSuffix(".md") ? newName : "\(newName).md"
             let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(fileName)
             guard newURL != oldURL else { return }
-            try? FileManager.default.moveItem(at: oldURL, to: newURL)
-            doc.fileURL = newURL
+            do {
+                // Fails if newURL exists — never repoint at someone else's file.
+                try FileManager.default.moveItem(at: oldURL, to: newURL)
+                doc.fileURL = newURL
+            } catch {
+                showError("Couldn't rename to \u{201C}\(fileName)\u{201D}", error)
+            }
         } else {
             doc.customName = newName
         }
@@ -162,9 +217,47 @@ class DocumentStore {
     // MARK: - Private
 
     private func saveAllDirty() {
-        for doc in documents where doc.isDirty && doc.fileURL != nil {
-            save(doc)
+        for doc in documents where doc.isDirty && doc.fileURL != nil && !doc.hasDiskConflict {
+            save(doc, interactive: false)
         }
+    }
+
+    /// Documents whose edits would be lost if the app quit now.
+    func unsavedDocumentsBeforeQuit() -> [MarkdownDocument] {
+        saveAllDirty()
+        return documents.filter { doc in
+            doc.isDirty && !(doc.fileURL == nil && doc.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private func resolveDiskConflict(_ doc: MarkdownDocument) {
+        guard doc.hasDiskConflict, documents.contains(where: { $0.id == doc.id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "\u{201C}\(doc.displayName)\u{201D} changed on disk"
+        alert.informativeText = "Another app changed this file while you had unsaved edits. Which version do you want to keep?"
+        alert.addButton(withTitle: "Keep My Edits")
+        alert.addButton(withTitle: "Use Disk Version")
+        if alert.runModal() == .alertFirstButtonReturn {
+            do { try doc.keepLocalVersion() } catch { showError("Couldn't save \u{201C}\(doc.displayName)\u{201D}", error) }
+        } else {
+            doc.useDiskVersion()
+        }
+    }
+
+    private func confirmDiscard(_ doc: MarkdownDocument, reason: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Close \u{201C}\(doc.displayName)\u{201D} without saving?"
+        alert.informativeText = "\(reason) Your unsaved changes will be lost."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Close Anyway")
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    private func showError(_ message: String, _ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
     }
 
     private func removeBlankUntitled() {

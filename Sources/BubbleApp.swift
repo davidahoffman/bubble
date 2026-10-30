@@ -32,6 +32,19 @@ class BubbleAppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let store = DocumentStore.active else { return .terminateNow }
+        let unsaved = store.unsavedDocumentsBeforeQuit()
+        guard !unsaved.isEmpty else { return .terminateNow }
+        let alert = NSAlert()
+        let names = unsaved.map { "\u{201C}\($0.displayName)\u{201D}" }.joined(separator: ", ")
+        alert.messageText = unsaved.count == 1 ? "1 document has unsaved changes" : "\(unsaved.count) documents have unsaved changes"
+        alert.informativeText = "\(names) will be lost if you quit now."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Quit Anyway")
+        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         DocumentStore.active?.persistSession()
     }

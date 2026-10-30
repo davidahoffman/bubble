@@ -9,6 +9,9 @@ class MarkdownDocument: Identifiable {
     var isDirty = false
     var customName: String?
     var lastKnownModDate: Date?
+    /// The file changed on disk while this document had unsaved edits. Neither
+    /// side wins automatically: autosave stops and the user picks a version.
+    var hasDiskConflict = false
 
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var directoryWatcher: DispatchSourceFileSystemObject?
@@ -147,11 +150,48 @@ class MarkdownDocument: Identifiable {
         guard let newContent = try? String(contentsOf: url, encoding: .utf8) else { return }
 
         lastKnownModDate = currentMod
-        if newContent != content {
-            content = newContent
-            isDirty = false
-            NotificationCenter.default.post(name: .documentDidReloadFromDisk, object: self)
+        guard newContent != content else { return }
+        if isDirty {
+            let alreadyConflicted = hasDiskConflict
+            hasDiskConflict = true
+            if !alreadyConflicted {
+                NotificationCenter.default.post(name: .documentDidConflictWithDisk, object: self)
+            }
+            return
         }
+        content = newContent
+        NotificationCenter.default.post(name: .documentDidReloadFromDisk, object: self)
+    }
+
+    /// Writes the document to its file. Marks it clean only after the write
+    /// succeeds, and refuses to overwrite a newer disk version it hasn't seen.
+    func write() throws {
+        guard let url = fileURL else { throw CocoaError(.fileNoSuchFile) }
+        if !hasDiskConflict {
+            let diskMod = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            if let diskMod, let lastKnownModDate, diskMod != lastKnownModDate {
+                reloadIfChanged()
+            }
+        }
+        if hasDiskConflict { throw CocoaError(.fileWriteUnknown) }
+        try content.write(to: url, atomically: true, encoding: .utf8)
+        isDirty = false
+        markJustSaved()
+    }
+
+    /// Resolves a disk conflict by keeping the in-memory edits (they overwrite the file).
+    func keepLocalVersion() throws {
+        hasDiskConflict = false
+        snapshotModDate()
+        try write()
+    }
+
+    /// Resolves a disk conflict by discarding in-memory edits for the disk version.
+    func useDiskVersion() {
+        hasDiskConflict = false
+        isDirty = false
+        lastKnownModDate = nil
+        reloadIfChanged()
     }
 
     func markJustSaved() {
@@ -162,4 +202,5 @@ class MarkdownDocument: Identifiable {
 
 extension Notification.Name {
     static let documentDidReloadFromDisk = Notification.Name("Bubble.documentDidReloadFromDisk")
+    static let documentDidConflictWithDisk = Notification.Name("Bubble.documentDidConflictWithDisk")
 }
