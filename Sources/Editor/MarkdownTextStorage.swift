@@ -212,6 +212,7 @@ class MarkdownTextStorage: NSTextStorage {
             let contentRange = match.range(at: 2)
             let closeFence = match.range(at: 3)
 
+            backing.addAttribute(.bubbleCodeBlock, value: true, range: fullRange)
             backing.addAttribute(.backgroundColor, value: MarkdownStyles.codeBlockBackground, range: fullRange)
             backing.addAttribute(.foregroundColor, value: MarkdownStyles.codeBlockText, range: contentRange)
             backing.addAttribute(.foregroundColor, value: MarkdownStyles.codeBlockFence, range: openFence)
@@ -367,7 +368,12 @@ class BubbleLayoutManager: NSLayoutManager {
             return
         }
 
-        let isCodeBlock = color == MarkdownStyles.codeBlockBackground
+        // Detect code blocks by the marker attribute rather than by color equality:
+        // the palette colors are dynamic (appearance-resolved), so comparing them is unreliable.
+        let isCodeBlock: Bool = {
+            guard let storage = textStorage, charRange.location < storage.length else { return false }
+            return storage.attribute(.bubbleCodeBlock, at: charRange.location, effectiveRange: nil) != nil
+        }()
 
         if isCodeBlock {
             // Union all rects, add padding, draw with rounded corners
