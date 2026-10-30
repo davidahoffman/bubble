@@ -77,14 +77,8 @@ struct EditorView: NSViewRepresentable {
         if document.id != coord.document.id {
             coord.document = document
             if let textView = coord.textView {
-                let newContent = document.content
                 coord.isSwapping = true
-                textView.string = newContent
-                if let storage = textView.textStorage as? MarkdownTextStorage {
-                    storage.beginEditing()
-                    storage.edited(.editedCharacters, range: NSRange(location: 0, length: (newContent as NSString).length), changeInLength: 0)
-                    storage.endEditing()
-                }
+                textView.replaceDocumentText(document.content)
                 coord.isSwapping = false
                 textView.setSelectedRange(NSRange(location: 0, length: 0))
                 textView.scrollToBeginningOfDocument(nil)
@@ -127,12 +121,7 @@ struct EditorView: NSViewRepresentable {
                       let textView = self.textView else { return }
                 let cursor = textView.selectedRange()
                 self.isSwapping = true
-                textView.string = doc.content
-                if let storage = textView.textStorage as? MarkdownTextStorage {
-                    storage.beginEditing()
-                    storage.edited(.editedCharacters, range: NSRange(location: 0, length: (doc.content as NSString).length), changeInLength: 0)
-                    storage.endEditing()
-                }
+                textView.replaceDocumentText(doc.content)
                 self.isSwapping = false
                 let safeCursor = NSRange(location: min(cursor.location, (doc.content as NSString).length), length: 0)
                 textView.setSelectedRange(safeCursor)
@@ -377,21 +366,15 @@ class BubbleTextView: NSTextView {
 
         guard anyList else { super.insertTab(sender); return }
 
-        var lineStarts: [Int] = []
-        text.enumerateSubstrings(in: linesRange, options: .byLines) { line, lineRange, _, _ in
-            guard let line = line else { return }
-            if listRegex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil {
-                lineStarts.append(lineRange.location)
-            }
+        var changed = 0
+        let replaced = rewriteLines(in: linesRange) { line, _ in
+            guard listRegex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil else { return line }
+            changed += 1
+            return "  " + line
         }
-
-        if shouldChangeText(in: linesRange, replacementString: text.substring(with: linesRange)) {
-            for start in lineStarts.reversed() {
-                storage.replaceCharacters(in: NSRange(location: start, length: 0), with: "  ")
-            }
-            didChangeText()
-            let newSel = NSRange(location: sel.location + 2, length: sel.length + (lineStarts.count - 1) * 2)
-            setSelectedRange(newSel)
+        if let replaced {
+            let newSel = NSRange(location: sel.location + 2, length: sel.length + (changed - 1) * 2)
+            setSelectedRange(NSRange(location: newSel.location, length: min(newSel.length, NSMaxRange(replaced) - newSel.location)))
         }
     }
 
@@ -412,11 +395,11 @@ class BubbleTextView: NSTextView {
 
         guard !lineStarts.isEmpty else { super.insertBacktab(sender); return }
 
-        if shouldChangeText(in: linesRange, replacementString: text.substring(with: linesRange)) {
-            for start in lineStarts.reversed() {
-                storage.replaceCharacters(in: NSRange(location: start, length: 2), with: "")
-            }
-            didChangeText()
+        let replaced = rewriteLines(in: linesRange) { line, _ in
+            guard listRegex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil else { return line }
+            return (line as NSString).substring(from: 2)
+        }
+        if replaced != nil {
             let newStart = max(linesRange.location, sel.location - 2)
             let newLen = max(0, sel.length - (lineStarts.count - 1) * 2)
             setSelectedRange(NSRange(location: newStart, length: newLen))
@@ -716,40 +699,60 @@ class BubbleTextView: NSTextView {
     }
 
     func convertListLines(_ ranges: [NSRange], to type: ListType) {
-        guard let storage = textStorage else { return }
-        let text = storage.string as NSString
-        var offset = 0
+        guard let first = ranges.first, let last = ranges.last else { return }
+        let fullRange = (string as NSString).lineRange(for: NSRange(location: first.location, length: NSMaxRange(last) - first.location))
+        let targetStarts = Set(ranges.map(\.location))
+        let prefixRegex = try? NSRegularExpression(pattern: #"^(\s*)([-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+\.\s+)"#)
 
-        let fullRange = NSRange(location: ranges.first!.location, length: NSMaxRange(ranges.last!) - ranges.first!.location)
-        let fullText = text.substring(with: fullRange)
-
-        if shouldChangeText(in: fullRange, replacementString: fullText) {
-            var num = 1
-            for lineRange in ranges {
-                let adjusted = NSRange(location: lineRange.location + offset, length: lineRange.length)
-                let line = (storage.string as NSString).substring(with: adjusted)
-                let ns = line as NSString
-                let r = NSRange(location: 0, length: ns.length)
-
-                var prefixRange = NSRange(location: 0, length: 0)
-                if let m = (try? NSRegularExpression(pattern: #"^(\s*)([-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+\.\s+)"#))?.firstMatch(in: line, range: r) {
-                    prefixRange = m.range(at: 2)
-                }
-
-                let oldPrefix = ns.substring(with: prefixRange)
-                let newPrefix: String
-                switch type {
-                case .bullet: newPrefix = "- "
-                case .numbered: newPrefix = "\(num). "; num += 1
-                case .checkbox: newPrefix = "- [ ] "
-                }
-
-                let globalPrefixRange = NSRange(location: adjusted.location + prefixRange.location, length: prefixRange.length)
-                storage.replaceCharacters(in: globalPrefixRange, with: newPrefix)
-                offset += (newPrefix as NSString).length - oldPrefix.count
+        var num = 1
+        rewriteLines(in: fullRange) { line, lineStart in
+            guard targetStarts.contains(lineStart) else { return line }
+            let ns = line as NSString
+            var prefixRange = NSRange(location: 0, length: 0)
+            if let m = prefixRegex?.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+                prefixRange = m.range(at: 2)
             }
-            didChangeText()
+            let newPrefix: String
+            switch type {
+            case .bullet: newPrefix = "- "
+            case .numbered: newPrefix = "\(num). "; num += 1
+            case .checkbox: newPrefix = "- [ ] "
+            }
+            return ns.replacingCharacters(in: prefixRange, with: newPrefix)
         }
+    }
+
+    /// Rewrites each line in `linesRange` (terminators preserved) as ONE text
+    /// change, so undo restores exactly what was there. Per-line edits under a
+    /// single shouldChangeText registered the wrong replacement and corrupted
+    /// the document on undo. Returns the new range, or nil if nothing changed.
+    @discardableResult
+    func rewriteLines(in linesRange: NSRange, _ transform: (String, Int) -> String) -> NSRange? {
+        let text = string as NSString
+        var lines: [(content: String, start: Int, terminator: String)] = []
+        text.enumerateSubstrings(in: linesRange, options: .byLines) { line, lineRange, enclosingRange, _ in
+            let terminator = text.substring(with: NSRange(location: NSMaxRange(lineRange), length: NSMaxRange(enclosingRange) - NSMaxRange(lineRange)))
+            lines.append((line ?? "", lineRange.location, terminator))
+        }
+        let result = lines.map { transform($0.content, $0.start) + $0.terminator }.joined()
+        let original = text.substring(with: linesRange)
+        guard result != original, shouldChangeText(in: linesRange, replacementString: result) else { return nil }
+        textStorage?.replaceCharacters(in: linesRange, with: result)
+        didChangeText()
+        return NSRange(location: linesRange.location, length: (result as NSString).length)
+    }
+
+    /// Swaps in a different document's text (tab switch or reload from disk).
+    /// Undo history belongs to the old text, so it is cleared — otherwise undo
+    /// replays edits from tab A into tab B, and autosave writes the damage.
+    func replaceDocumentText(_ newContent: String) {
+        string = newContent
+        if let storage = textStorage as? MarkdownTextStorage {
+            storage.beginEditing()
+            storage.edited(.editedCharacters, range: NSRange(location: 0, length: (newContent as NSString).length), changeInLength: 0)
+            storage.endEditing()
+        }
+        undoManager?.removeAllActions()
     }
 }
 
